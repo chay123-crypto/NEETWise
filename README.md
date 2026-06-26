@@ -4,7 +4,7 @@
 
 > Ask any Biology question. Get a clear, cited answer. Or type what you *think* you understand — and get corrected.
 
-🚀 **[Live Demo on Hugging Face Spaces](https://huggingface.co/spaces/chay123-crypto/NeetWise)** · 🟢 Uptime monitored via UptimeRobot
+🚀 **[Live Demo on Hugging Face Spaces](https://huggingface.co/spaces/chay123-crypto/NeetWise)** · 🟢 Monitored Via Gitub CI/CD Actions that health checks by sending ping messages 5 minutes once.
 
 ---
 
