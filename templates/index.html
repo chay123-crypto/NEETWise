@@ -72,6 +72,12 @@
                         {% endif %}
                     </div>
                 </div>
+                <div id="answerFeedback" style="display:none;" class="mt-2">
+                    <span>Was this answer helpful?</span>
+                    <button type="button" class="btn btn-sm btn-outline-success ms-2" data-rating="1">👍</button>
+                    <button type="button" class="btn btn-sm btn-outline-danger ms-1" data-rating="-1">👎</button>
+                    <span id="feedbackStatus" class="ms-2" style="transition: opacity 0.5s;"></span>
+                </div>
                 <h5 class="card-title mt-3">Sources</h5> 
                 <div class="border rounded p-2 mt-1">
                     <div class="border rounded p-2 mt-1" name="sources" style="background-color:white; height:200px; overflow-y: auto;">
@@ -100,12 +106,10 @@
         modeSection=document.getElementById('modeSection')
         text=document.getElementById('answerText')
         source=document.querySelector('[name="sources"]')
-
         textInput.value=''   
         textArea.value='' 
         source.innerHTML=''
         text.innerHTML=''
-
         if (mode=='Explain') {
             form.action='/explain'
             label.textContent="Question"
@@ -114,7 +118,6 @@
             langSection.style.display='block'
             modeSection.style.display='block'
             source.style.display='block'
-
         } else {
             form.action='/misconception'
             label.textContent="Your Understanding"
@@ -126,11 +129,20 @@
         }
     }
     changeMode('Explain');
+    let messageId=null;
+    let feedbackMessageTimer=null;
     
     document.getElementById('mainForm').addEventListener('submit',function(e)
     {
         e.preventDefault()
         const form=new FormData(this)
+        messageId=null
+        document.getElementById('answerFeedback').style.display='none'
+        const feedbackStatus=document.getElementById('feedbackStatus')
+        clearTimeout(feedbackMessageTimer)
+        feedbackStatus.textContent=''
+        feedbackStatus.style.opacity='1'
+        document.querySelectorAll('#answerFeedback button').forEach(b=>{b.disabled=false})
         document.getElementById('answerText').innerHTML=''
         document.querySelector('[name="sources"]').innerHTML=''
         const loader=document.getElementById('loader') 
@@ -152,7 +164,6 @@
                    }
                     const reader=res.body.getReader()
                     const decoder=new TextDecoder()
-
                     function read()
                     {
                         reader.read().then(({done,value})=>{
@@ -164,13 +175,21 @@
                             const lines=chunk.split('\n\n').filter(l=>l!="")
                             for(const line of lines)
                             {
-                                const raw=line.replace('data: ','').trim()
+                                const raw=line.replace(/^data:\s*/,'').trim()
                                 if(raw=='[DONE]')
                                {
-                                    answerbox.innerHTML=marked.parse(buffer).replace(/\n/g, '<br>')
+                                    loader.style.display='none'
+                                    const box=document.getElementById('answerText')
+                                    if(!buffer.trim()){
+                                        box.textContent='The server returned an empty answer. Check the Flask terminal for errors.'
+                                        return
+                                    }
+                                    box.innerHTML=marked.parse(buffer).replace(/\n/g, '<br>')
+                                    if(messageId){document.getElementById('answerFeedback').style.display='block'}
                                     return
                                }
                             const data=JSON.parse(raw)
+                            if(data.message_id) messageId=data.message_id
                             if(data.token)
                             {
                                 loader.style.display = 'none' 
@@ -209,7 +228,6 @@
                    }
                     const reader=res.body.getReader()
                     const decoder=new TextDecoder()
-
                     function read()
                     {
                         reader.read().then(({done,value})=>{
@@ -221,10 +239,11 @@
                             const lines=chunk.split('\n\n').filter(l=>l!="")
                             for(const line of lines)
                             {
-                                const raw=line.replace('data: ','').trim()
+                                const raw=line.replace(/^data:\s*/,'').trim()
                                 if(raw=='[DONE]')
                             {
-                                answerbox.innerHTML=marked.parse(buffer)
+                                loader.style.display='none'
+                                document.getElementById('answerText').innerHTML=buffer.trim()?marked.parse(buffer):'The server returned an empty answer. Check the Flask terminal for errors.'
                                 return
                             }
                             const data=JSON.parse(raw)
@@ -244,4 +263,33 @@
             )
         }  
     }) 
+    document.querySelectorAll('#answerFeedback button').forEach(button=>{
+        button.addEventListener('click',async()=>{
+            if(!messageId) return
+            const status=document.getElementById('feedbackStatus')
+            clearTimeout(feedbackMessageTimer)
+            status.textContent=''
+            status.style.opacity='1'
+            try{
+                const res=await fetch('/feedback',{
+                    method:'POST',
+                    headers:{'Content-Type':'application/json'},
+                    body:JSON.stringify({message_id:messageId,ratings:Number(button.dataset.rating)})
+                })
+                const result=await res.json()
+                if(!res.ok||!result.ok) throw new Error(result.error||'Could not save feedback')
+                status.textContent='Thanks for your feedback!'
+                feedbackMessageTimer=setTimeout(()=>{
+                    status.style.opacity='0'
+                    setTimeout(()=>{
+                        status.textContent=''
+                        status.style.opacity='1'
+                    },500)
+                },5000)
+                document.querySelectorAll('#answerFeedback button').forEach(b=>{b.disabled=true})
+            }catch(err){
+                status.textContent=err.message
+            }
+        })
+    })
 </script>

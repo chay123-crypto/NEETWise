@@ -1,13 +1,16 @@
-from langchain_cerebras import ChatCerebras
-from config import LLM_MODEL,CEREBRAS_API_KEY,LLM_TEMPERATURE,CROSS_ENCODER_MODEL,FAISS_K,BM25_K,ENSEMBLE_WEIGHTS,LLM_MAX_TOKENS
+from langchain_groq import ChatGroq
+from config import LLM_MODEL,GROQ_API_KEY,LLM_TEMPERATURE,CROSS_ENCODER_MODEL,FAISS_K,BM25_K,ENSEMBLE_WEIGHTS,LLM_MAX_TOKENS
 from sentence_transformers import CrossEncoder
 from langchain_community.retrievers import BM25Retriever
 from langchain_classic.retrievers import EnsembleRetriever
 
 def llm_load():
-    llm=ChatCerebras(
+    llm=ChatGroq(
         model=LLM_MODEL,
-        api_key=CEREBRAS_API_KEY,temperature=LLM_TEMPERATURE,max_tokens=LLM_MAX_TOKENS
+        groq_api_key=GROQ_API_KEY,
+        temperature=LLM_TEMPERATURE,
+        max_tokens=LLM_MAX_TOKENS,
+        reasoning_effort="high",
     )
     return llm
 

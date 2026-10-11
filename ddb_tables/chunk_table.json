@@ -1,0 +1,10 @@
+{
+  "TableName": "neetwise_chunk_stats",
+  "BillingMode": "PAY_PER_REQUEST",
+  "AttributeDefinitions": [
+    {"AttributeName": "chunk_id", "AttributeType": "S"}
+  ],
+  "KeySchema": [
+    {"AttributeName": "chunk_id", "KeyType": "HASH"}
+  ]
+}

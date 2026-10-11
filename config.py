@@ -3,13 +3,12 @@ import dotenv
 
 dotenv.load_dotenv()
 # --- API Keys ---
-CEREBRAS_API_KEY=os.getenv("CEREBRAS_API_KEY")
 GROQ_API_KEY=os.getenv("GROQ_API_KEY")
 
 # --- Model Settings ---
-LLM_MODEL="llama3.1-8b"
+LLM_MODEL="openai/gpt-oss-120b"
 LLM_TEMPERATURE=0.3
-LLM_MAX_TOKENS=512
+LLM_MAX_TOKENS=1024
 EMBEDDINGS_MODEL="sentence-transformers/all-MiniLM-L6-v2"
 CROSS_ENCODER_MODEL="cross-encoder/ms-marco-MiniLM-L-6-v2"
 EVALUATOR_MODEL="meta-llama/llama-4-scout-17b-16e-instruct"

@@ -1,0 +1,22 @@
+{
+  "TableName": "neetwise_feedback",
+  "BillingMode": "PAY_PER_REQUEST",
+  "AttributeDefinitions": [
+    {"AttributeName": "message_id", "AttributeType": "S"},
+    {"AttributeName": "rating_key", "AttributeType": "S"},
+    {"AttributeName": "feedback_at", "AttributeType": "S"}
+  ],
+  "KeySchema": [
+    {"AttributeName": "message_id", "KeyType": "HASH"}
+  ],
+  "GlobalSecondaryIndexes": [
+    {
+      "IndexName": "rating-index",
+      "KeySchema": [
+        {"AttributeName": "rating_key", "KeyType": "HASH"},
+        {"AttributeName": "feedback_at", "KeyType": "RANGE"}
+      ],
+      "Projection": {"ProjectionType": "ALL"}
+    }
+  ]
+}

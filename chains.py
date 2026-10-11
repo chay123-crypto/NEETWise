@@ -2,6 +2,12 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 from config import CHAPTER_MAP
+from chunk_stats import chunk_id,rerank_with_feedback
+
+CHAPTER_MAP_BY_FILENAME = {
+    path.replace("\\", "/").rsplit("/", 1)[-1].casefold(): chapter
+    for path, chapter in CHAPTER_MAP.items()
+}
 
 def misconception_detection(inputs,retriever,ce,llm):
     retrieved_chunks=retriever.invoke(inputs)
@@ -83,6 +89,8 @@ def ask_ncert(ques,retriever,ce,llm,lang='English',answer_mode="Normal"):
     Answer : """
     prompt=PromptTemplate.from_template(prompt).partial(language=lang,answer_mode=answer_mode)
     retrieved_chunks=retriever.invoke(ques)
+    if not retrieved_chunks:
+        return iter(["Not available in NCERT. Please ask a valid biology question."]),[]
 
     pairs=[(ques,chunk.page_content) for chunk in retrieved_chunks]
     final_results=ce.predict(pairs)
@@ -92,7 +100,8 @@ def ask_ncert(ques,retriever,ce,llm,lang='English',answer_mode="Normal"):
     best_score = ranked_pair[0][0]
     if best_score < -5:
         return iter(["Not available in NCERT. Please ask a valid biology question."]), []
-    
+    ranked=rerank_with_feedback(zip(retrieved_chunks,final_results))
+    top_chunks=[doc for doc, _, _ in ranked[:3]]
     chain=(
         {'context':lambda _:top_chunks,'question':RunnablePassthrough()} |
         prompt|llm|StrOutputParser()
@@ -101,20 +110,23 @@ def ask_ncert(ques,retriever,ce,llm,lang='English',answer_mode="Normal"):
     return answer,top_chunks
 
 def pdf_to_chap(chunks):
-    results=set()
-    pages=list()
+    citations=[]
+    seen=set()
     for chunk in chunks:
         source = chunk.metadata['source']
         page = chunk.metadata['page']
-        chapter = CHAPTER_MAP.get(source,"Unknown Chapter")
-        results.add(chapter)
-        pages.append(page+1)
-    return list(results),pages
+        filename = str(source).replace("\\", "/").rsplit("/", 1)[-1].casefold()
+        chapter = CHAPTER_MAP_BY_FILENAME.get(filename, "Unknown Chapter")
+        citation=(chapter,page+1)
+        if citation not in seen:
+            seen.add(citation)
+            citations.append(citation)
+    return citations
 
 def answer_with_cite(ques,retriever,ce,llm,lang='English',answer_mode="Normal"):
     answer,chunks=ask_ncert(ques,retriever,ce,llm,lang,answer_mode)
+    chunk_ids=[chunk_id(chunk) for chunk in chunks]
     if not chunks: 
-        return answer,[]   
-    chapters,pages=pdf_to_chap(chunks)
-    citations=list(zip(chapters,pages))
-    return answer,citations
+        return answer,[],[]   
+    citations=pdf_to_chap(chunks)
+    return answer,citations,chunk_ids
