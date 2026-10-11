@@ -34,13 +34,17 @@ Ensemble Retriever (BM25 + FAISS)
 Cross-Encoder Reranker (ms-marco-MiniLM-L-6-v2)
     │  Top-3 chunks selected
     ▼
-LLM (Llama 3.1-8B via Cerebras)
+LLM (GPT OSS 120B via Groq; high reasoning effort)
     │  Streamed response via SSE
     ▼
 Answer + Chapter/Page Citations
+    │
+    ├── Save answer + source chunk IDs in DynamoDB
+    ▼
+Student rating (👍 / 👎) → chunk vote totals → feedback-aware reranking
 ```
 
-The retrieval pipeline uses a two-stage approach: an ensemble of BM25 (keyword) and FAISS (semantic) retrievers for broad recall, followed by a cross-encoder to rerank and select the most relevant chunks. This is more accurate than single-stage retrieval alone.
+The retrieval pipeline uses an ensemble of BM25 (keyword) and FAISS (semantic) retrievers for broad recall, followed by a cross-encoder and feedback-aware reranking to select the most relevant chunks. Student ratings are stored in DynamoDB and associated with the chunks used for the answer. Chunk vote totals can then influence later retrieval rankings.
 
 An out-of-domain guard is also in place — if the best reranker score is below a threshold, the app declines to answer rather than hallucinate.
 
@@ -50,11 +54,12 @@ An out-of-domain guard is also in place — if the best reranker score is below 
 
 | Component | Technology |
 |---|---|
-| LLM | Llama 3.1-8B (via Cerebras API) |
+| LLM | GPT OSS 120B (via Groq API, high reasoning effort) |
 | Embeddings | `sentence-transformers/all-MiniLM-L6-v2` |
 | Vector Store | FAISS |
 | Keyword Retriever | BM25 (LangChain) |
 | Reranker | `cross-encoder/ms-marco-MiniLM-L-6-v2` |
+| Feedback storage | Amazon DynamoDB (answer feedback and chunk vote totals) |
 | Framework | Flask + LangChain |
 | Deployment | Hugging Face Spaces (Docker) |
 | Streaming | Server-Sent Events (SSE) |
@@ -79,7 +84,46 @@ Covers all NCERT Biology chapters for Classes 11 and 12:
 - **Hinglish support** — answers in a Hindi-English mix for students more comfortable in that register (no Devanagari script)
 - **Simple mode** — explains concepts using everyday analogies, suited for beginners
 - **Misconception detection** — evaluates student understanding and gives targeted corrections
+- **Answer feedback** — students can rate an answer with 👍 or 👎; duplicate ratings for the same answer are rejected
+- **Feedback-aware retrieval** — answer ratings update per-chunk vote totals, which are used to rerank chunks in later answers
 - **Out-of-domain rejection** — refuses to answer non-biology or off-NCERT questions
+
+---
+
+## Answer Feedback Loop (DynamoDB)
+
+The feedback loop uses two DynamoDB tables in the same AWS region:
+
+| Table | Default name | Partition key | Purpose |
+|---|---|---|---|
+| Answer feedback | `neetwise_feedback` | `message_id` (String) | Stores each answer, citations, associated chunk IDs, and the student's rating |
+| Chunk statistics | `neetwise_chunk_stats` | `chunk_id` (String) | Stores aggregate `ups` and `downs` for each source chunk |
+
+The answer feedback table also needs a global secondary index named `rating-index`, with `rating_key` (String) as its partition key and `feedback_at` (String) as its sort key. The table definitions are provided in [`ddb_tables/feedback_tables.json`](./ddb_tables/feedback_tables.json) and [`ddb_tables/chunk_table.json`](./ddb_tables/chunk_table.json).
+
+Create the tables with the AWS CLI, using credentials for an AWS account that is allowed to create DynamoDB tables:
+
+```powershell
+aws dynamodb create-table --cli-input-json file://ddb_tables/feedback_tables.json --region ap-south-1
+aws dynamodb create-table --cli-input-json file://ddb_tables/chunk_table.json --region ap-south-1
+```
+
+Wait until both tables are `ACTIVE` before starting the app. In the AWS Console, select **Asia Pacific (Mumbai) / `ap-south-1`** and open **DynamoDB → Tables** to see them.
+
+Configure the app's `.env` file:
+
+```env
+GROQ_API_KEY=your_groq_api_key
+AWS_REGION=ap-south-1
+DDB_TABLE=neetwise_feedback
+DDB_CHUNK_TABLE=neetwise_chunk_stats
+```
+
+Configure AWS credentials using an AWS CLI profile (`aws configure`) or the environment/role credentials appropriate to your deployment. The app's AWS identity needs DynamoDB permissions to `PutItem` and `UpdateItem` on the answer feedback table, `UpdateItem` and `Scan` on the chunk statistics table, and `Query` on the answer feedback table's `rating-index`. Do not put AWS access keys in source control.
+
+After an answer is generated, its source chunk IDs are saved with the answer. A student can submit one rating per answer; the first rating updates each associated chunk's `ups` or `downs` counter. During retrieval, feedback is refreshed from DynamoDB every 10 minutes and only affects ranking after a chunk has at least three votes. New chunks have no stats item until they receive a vote.
+
+> The table JSON files define table creation only. They do not create tables automatically when the Flask app starts.
 
 ---
 
@@ -89,11 +133,6 @@ Covers all NCERT Biology chapters for Classes 11 and 12:
 git clone https://huggingface.co/spaces/chay123-crypto/NeetWise
 cd NeetWise
 pip install -r requirements.txt
-```
-
-Create a `.env` file:
-```
-CEREBRAS_API_KEY=your_cerebras_key
 ```
 
 Add your NCERT PDF files to:
@@ -124,6 +163,9 @@ NeetWise/
 ├── loaders.py      # PDF loading and chunking
 ├── config.py       # Models, paths, chapter map
 ├── evaluation.py   # Retrieval evaluation utilities
+├── db_logger.py    # DynamoDB answer logging and feedback endpoint storage
+├── chunk_stats.py  # Chunk vote totals and feedback-based reranking
+├── ddb_tables/     # DynamoDB table creation definitions
 ├── templates/      # HTML frontend
 └── index/          # Saved FAISS index (generated on first run)
 ```
