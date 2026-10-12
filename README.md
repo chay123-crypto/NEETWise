@@ -123,6 +123,12 @@ Configure AWS credentials using an AWS CLI profile (`aws configure`) or the envi
 
 After an answer is generated, its source chunk IDs are saved with the answer. A student can submit one rating per answer; the first rating updates each associated chunk's `ups` or `downs` counter. During retrieval, feedback is refreshed from DynamoDB every 10 minutes and only affects ranking after a chunk has at least three votes. New chunks have no stats item until they receive a vote.
 
+```text
+adjusted_score = cross_encoder_score - FB_WEIGHT × (downs - ups) / (total_votes + 5)
+```
+
+`FB_WEIGHT` defaults to `1.0`; the `+5` smooths small vote counts.
+
 > The table JSON files define table creation only. They do not create tables automatically when the Flask app starts.
 
 ---
